@@ -1,0 +1,114 @@
+import pandas as pd
+from pandas import ExcelWriter
+import matplotlib.pyplot as plt
+import openpyxl
+from openpyxl.chart import BarChart, Series, Reference
+from openpyxl.utils.dataframe import dataframe_to_rows, expand_levels
+from openpyxl import Workbook
+from openpyxl.chart.layout import Layout, ManualLayout
+from openpyxl.styles import PatternFill, Border, Side, Alignment, Protection, Font
+import os
+
+# Change working directory:
+os.chdir('C:\\Users\\I517795\\Desktop\\Excel Project')
+
+
+#1: Load excel file into DataFrame object:
+framework = r"C:\Users\I517795\Desktop\Excel Project\Framework.xlsx"
+cloud_pipe = r"C:\Users\I517795\Desktop\Excel Project\Cloud Pipeline.xlsx"
+
+workbook1 = pd.read_excel(framework, sheet_name = None)
+workbook2 = pd.read_excel(cloud_pipe, sheet_name = None)
+
+print(workbook1.keys())
+print(workbook2.keys())
+
+
+#2: Clean & prepare data:
+sheet1 = workbook1['Raw Data']
+sheet2 = workbook2['Sheet0']
+
+#Delete unnecessary columns:
+for column in sheet2.columns:
+    if column not in sheet1.columns:
+        sheet2.drop(column, axis=1, inplace = True) 
+        
+for column in sheet1.columns:
+    if column not in sheet2.columns:
+        sheet1.drop(column, axis=1, inplace = True)
+
+#Check: if number of columns in sheet 2 = sheet 1 ==> Pass!
+print(sheet1.shape)
+print(sheet2.shape)
+
+
+#3: Delete old data in 'Framework':
+sheet1.drop(sheet1.index[0:sheet1.shape[0]], inplace = True)
+
+# Append new data from 'Sheet0' to 'Framework':
+for column in sheet1.columns:
+    sheet1[column] = sheet2[column]
+
+
+
+#4: Apply filter to pick Sales Specialist Owners:
+owner_list = ["Ali NABIL", "Amrit RAJBANSH", "Cole Molapisane", "Eugenio Moya", "GIACOMO COPPI", "Hani ABDULAZIM", 
+           "Imran AHMED", "Nadim KLAT", "Orestes German", "Redha GHANDAL", "Roberto Marcolongo","STEFANO BONADIMANI", 
+           "Tiago Fernandes", "Wesley Estment", "Eldar Chiproot", "Selim Kayacan", "STEFANO BRAGHINI", "Ayse Ozay", 
+           "Yusuf NAQWI", "Javier Cordoba"]
+           
+filter = sheet1.loc[sheet1["Opp Owner Name"].isin(owner_list)]
+
+
+#5: Create pivot table:
+pivot = filter.groupby(["Opp Owner Name", "Closing Qtr"])
+result = pivot["ACV kEUR"].sum()
+
+#Convert Series to DataFrame:
+result_df = result.to_frame()
+
+
+#6: Export dataframe filter & result_df to Excel:
+writer = ExcelWriter('Output.xlsx')
+result_df.to_excel(writer, sheet_name ="Pivot Table")
+filter.to_excel(writer, sheet_name = "Filter Data")
+writer.save()
+
+
+#7 Load the Excel again to Workbook object, in order to format & draw graph:
+workbook = openpyxl.load_workbook('Output.xlsx')
+
+
+#8: Formatting:
+ws = workbook['Pivot Table']
+ws2 = workbook['Filter Data']
+cell_list = ['A1', 'B1', 'C1']
+for x in cell_list:
+    ws[x].font = Font(bold = True)
+    ws[x].fill = PatternFill("solid", fgColor="FCFF00")
+    ws[x].alignment = Alignment(horizontal="center", vertical="center")
+    
+
+#9: Build chart:
+chart1 = BarChart()
+chart1.type = 'col'
+chart1.style = 3
+chart1.title = 'Top 20 of 2020'
+chart1.y_axis.title = 'ACV'
+chart1.x_axis.title = 'Quarter & Owners'
+chart1.layout=Layout(manualLayout=ManualLayout(h=1, w=1))
+
+
+data = Reference(ws, min_col=1, min_row=1,
+                max_col=3, max_row=65)
+cats = Reference(ws, min_col=1, max_col=2,
+                 min_row=1, max_row=65)
+
+chart1.add_data(data, titles_from_data=True)
+chart1.set_categories(cats)
+ws.add_chart(chart1, "A10")
+
+
+#10: Export:
+workbook.save('Final Version.xlsx')
+
