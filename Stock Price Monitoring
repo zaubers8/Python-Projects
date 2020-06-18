@@ -1,0 +1,98 @@
+import pandas as pd
+from pandas import ExcelWriter
+import time
+from pprint import pprint
+from alpha_vantage.timeseries import TimeSeries
+from alpha_vantage.techindicators import TechIndicators
+import matplotlib.pyplot as plt
+import smtplib, ssl
+
+#1: Load stock data to data frame:
+api = 'PZ777Z6HJSVHI3NN'
+ts = TimeSeries(key = api, output_format = 'pandas')
+
+# Load Netflix(NFLX) stock data with interval of every 1 minute:
+data, meta_data = ts.get_intraday(symbol='NFLX', interval = '1min', outputsize = 'full')
+
+
+#2: Calculate percentage change:
+open_price = data['1. open'][-1]
+close_data = data['4. close']
+percent_change = (close_data - open_price) / open_price
+data['6. pct_change'] = percent_change
+last_change = percent_change[-1]
+
+# Set up price volatility alert: (When recent % change of closing price > 1%)
+if abs(last_change) >= 0.01:
+    print(f'NFLX Alert: {last_change*100}%')
+    
+    
+#3 Building technical indicator: SMA (Simple Moving Average) to detect entry/exit Points:
+
+# Get real-time stock data
+data_ts, meta_ts = ts.get_intraday(symbol='NFLX', interval='60min', outputsize = 'full')
+
+# Get 50-day SMA stock data
+sma_period = 50
+ti = TechIndicators(key = api, output_format = 'pandas')
+sma_ti, meta_ti = ti.get_sma(symbol = 'NFLX', interval = '60min', 
+                            time_period = sma_period, series_type = 'close')
+
+# Combine real-time data with SMA data into dataframe to compare
+df_ts = data_ts['4. close'].sort_index().iloc[sma_period-1::]
+df_sma = sma_ti
+total_df = pd.concat([df_ts, df_sma], axis =1
+
+
+#4 Plot graph to compare recent price vs 50-day SMA line:
+total_df.plot(figsize=[15,8])
+plt.title("SMA & Closing Price")
+plt.grid(True, alpha = 0.5)
+legend = plt.legend()
+legend.get_texts()[0].set_text('Closing Price')
+legend.get_texts()[1].set_text('50-day SMA')
+plt.savefig('temp.png')
+plt.show()
+
+
+#5 Set up buying/selling alerts:
+recent_price = df_ts[-1]
+second_recent_price = df_ts[-2]
+recent_sma = df_sma['SMA'][-1]
+
+i = 1
+while i==1:
+    # Buying signals: (Recent closing price is increasing and only 5 points lower than SMA)
+    if (recent_sma - recent_price) in range(0, 5) and recent_price > second_recent_price:
+        print('Buying time!')
+        time.sleep(60)
+
+    # Selling signals: (Recent closing price is decreasing and only 5 points higher than SMA)
+    if (recent_price - recent_sma) in range(0, 5) and recent_price < second_recent_price:
+        print('Selling time!')
+        time.sleep(60)
+
+
+#6 Push notification to email when reaching entry/exit points:
+port = 465  # For SSL
+smtp_server = "smtp.gmail.com"
+sender_email = "sangdt68@gmail.com"  # Enter your address
+receiver_email = "client@gmail.com"  # Enter receiver address
+password = input("Type mail password: ")
+context = ssl.create_default_context()
+
+# Send buying message:
+if (recent_sma - recent_price) in range(0, 5) and recent_price > second_recent_price:
+    with smtplib.SMTP_SSL(smtp_server, port, context=context) as server:
+        server.login(sender_email, password)
+        message = 'Buying time! Direct to: https://finance.yahoo.com/quote/NFLX?p=NFLX&.tsrc=fin-srch'
+        server.sendmail(sender_email, receiver_email, message)
+    time.sleep(60)
+
+# Send selling message:
+if (recent_price - recent_sma) in range(0, 5) and recent_price < second_recent_price:
+    with smtplib.SMTP_SSL(smtp_server, port, context=context) as server:
+        server.login(sender_email, password)
+        message = 'Selling time! Direct to: https://finance.yahoo.com/quote/NFLX?p=NFLX&.tsrc=fin-srch'
+        server.sendmail(sender_email, receiver_email, message)
+    time.sleep(60)
